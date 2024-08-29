@@ -1,0 +1,69 @@
+# Create a simulator instance
+set ns [new Simulator]
+
+# Create a trace file to store simulation data
+set tracefile [open advanced_linear_sensor_network.tr w]
+$ns trace-all $tracefile
+
+# Define simulation parameters
+set num_nodes 10
+set xpos 100
+set ypos 0
+
+# Create nodes and position them linearly
+for {set i 0} {$i < $num_nodes} {incr i} {
+    set node($i) [$ns node]
+    $node($i) set X_ $xpos
+    $node($i) set Y_ $ypos
+    $node($i) set Z_ 0
+    $node($i) random-motion 1 ; # Enable random mobility for nodes
+    set xpos [expr $xpos + 50] ; # Space nodes 50 units apart
+}
+
+# Define MAC protocol and energy parameters
+for {set i 0} {$i < $num_nodes} {incr i} {
+    $node($i) set energyModel EnergyModel
+    $node($i) set initialEnergy 100 ; # Initial energy for each node
+    $node($i) set macType Mac/AdvancedEnergyEfficientMAC ; # Custom MAC protocol
+}
+
+# Create links between nodes with two-way communication capability
+for {set i 0} {$i < $num_nodes-1} {incr i} {
+    $ns duplex-link $node($i) $node([expr $i+1]) 1Mb 10ms DropTail
+}
+
+# Setup QoS-aware traffic
+set udp [new Agent/UDP]
+set sink [new Agent/Null]
+$ns attach-agent $node(0) $udp
+$ns attach-agent $node([expr $num_nodes-1]) $sink
+$ns connect $udp $sink
+
+set cbr [new Application/Traffic/CBR]
+$cbr set packetSize_ 1000
+$cbr set interval_ 0.05
+$cbr set qos_ 1 ; # Enable QoS for CBR traffic
+$cbr attach-agent $udp
+
+# Schedule traffic start and stop times
+$ns at 1.0 "$cbr start"
+$ns at 8.0 "$cbr stop"
+
+# Energy consumption monitoring
+for {set i 0} {$i < $num_nodes} {incr i} {
+    $ns at 2.0 "$node($i) get-energy"
+    $ns at 4.0 "$node($i) get-energy"
+    $ns at 6.0 "$node($i) get-energy"
+}
+
+# Run simulation
+$ns at 10.0 "finish"
+proc finish {} {
+    global ns tracefile
+    $ns flush-trace
+    close $tracefile
+    exec nam advanced_linear_sensor_network.nam &
+    exit 0
+}
+
+$ns run
