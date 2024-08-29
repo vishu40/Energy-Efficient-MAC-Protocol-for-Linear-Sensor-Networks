@@ -1,0 +1,153 @@
+#include "mac.h"
+#include "energy-model.h"
+#include <queue>
+
+class AdvancedEnergyEfficientMAC : public Mac {
+public:
+    AdvancedEnergyEfficientMAC() {
+        energy_model_ = 0;
+        min_sleep_interval_ = 0.1; // Minimum sleep interval in seconds
+        max_sleep_interval_ = 2.0; // Maximum sleep interval in seconds
+        awake_ = true;
+        traffic_load_ = 0;
+        collision_avoidance_enabled_ = true;
+        qos_enabled_ = true;
+        sync_enabled_ = true;
+    }
+
+    void recv(Packet* p, Handler* h) {
+        // Check if the node has energy and is awake
+        if (energy_model_ && energy_model_->energy() > 0) {
+            if (awake_) {
+                if (collision_avoidance_enabled_ && channel_busy()) {
+                    queue_packet(p); // Queue packet if channel is busy
+                } else {
+                    handle_packet(p, h); // Process packet based on type and QoS
+                }
+            } else {
+                drop(p); // Drop packet if node is asleep
+            }
+        } else {
+            drop(p); // Drop packet if no energy
+        }
+    }
+
+    void send(Packet* p, Handler* h) {
+        if (energy_model_ && energy_model_->energy() > 0) {
+            if (awake_) {
+                if (!channel_busy()) {
+                    Mac::send(p, h);
+                    energy_model_->DecrTxPower(1); // Decrement energy for transmission
+                } else {
+                    queue_packet(p); // Queue packet if channel is busy
+                }
+            } else {
+                queue_packet(p); // Queue packet if node is asleep
+            }
+        } else {
+            drop(p); // Drop packet if no energy
+        }
+    }
+
+    void set_energy_model(EnergyModel* em) {
+        energy_model_ = em;
+    }
+
+    void schedule_dynamic_sleep() {
+        // Adaptive sleep scheduling based on traffic load and node state
+        if (traffic_load_ > HIGH_TRAFFIC_THRESHOLD || has_critical_packet()) {
+            sleep_interval_ = min_sleep_interval_; // Stay awake longer for high traffic or critical packets
+        } else {
+            sleep_interval_ = max_sleep_interval_; // Sleep longer for low traffic
+        }
+        awake_ = false;
+        Scheduler::instance().schedule(this, wakeup_event_, sleep_interval_);
+    }
+
+    void wake_up() {
+        awake_ = true;
+        if (sync_enabled_) {
+            synchronize_with_neighbors(); // Sync with neighboring nodes
+        }
+        while (!packet_queue_.empty()) {
+            Packet* p = packet_queue_.front();
+            packet_queue_.pop();
+            Mac::send(p, 0); // Send queued packets
+        }
+        schedule_dynamic_sleep(); // Schedule next sleep
+    }
+
+protected:
+    EnergyModel* energy_model_;
+    double min_sleep_interval_;
+    double max_sleep_interval_;
+    double sleep_interval_;
+    bool awake_;
+    int traffic_load_;
+    bool collision_avoidance_enabled_;
+    bool qos_enabled_;
+    bool sync_enabled_;
+    std::queue<Packet*> packet_queue_;
+
+    void handle_packet(Packet* p, Handler* h) {
+        // Handle packet based on QoS and type
+        hdr_cmn* ch = HDR_CMN(p);
+        if (qos_enabled_ && ch->prio() > 0) {
+            // Prioritize critical packets
+            process_critical_packet(p, h);
+        } else {
+            Mac::recv(p, h); // Normal processing
+        }
+        update_traffic_load(p);
+    }
+
+    void process_critical_packet(Packet* p, Handler* h) {
+        // Immediate processing of critical packets
+        Mac::recv(p, h);
+    }
+
+    void update_traffic_load(Packet* p) {
+        // Simple heuristic to update traffic load
+        traffic_load_ = (traffic_load_ + 1) % 20; // Example load calculation
+    }
+
+    bool channel_busy() {
+        // Implement RTS/CTS for collision avoidance
+        return (rand() % 2) == 0; // Randomly decide if channel is busy
+    }
+
+    void queue_packet(Packet* p) {
+        packet_queue_.push(p);
+    }
+
+    bool has_critical_packet() {
+        // Check if there is a critical packet in the queue
+        std::queue<Packet*> temp_queue = packet_queue_;
+        while (!temp_queue.empty()) {
+            Packet* p = temp_queue.front();
+            temp_queue.pop();
+            hdr_cmn* ch = HDR_CMN(p);
+            if (ch->prio() > 0) return true;
+        }
+        return false;
+    }
+
+    void synchronize_with_neighbors() {
+        // Sync mechanism to align wake/sleep cycles with neighbors
+        // Example: Send SYNC packet to neighbors
+        Packet* sync_pkt = Packet::alloc();
+        hdr_cmn* ch = HDR_CMN(sync_pkt);
+        ch->ptype() = PT_SYNC;
+        ch->size() = SYNC_PACKET_SIZE;
+        Mac::send(sync_pkt, 0);
+    }
+};
+
+// Define the new protocol type in NS-2
+static class AdvancedEnergyEfficientMACClass : public TclClass {
+public:
+    AdvancedEnergyEfficientMACClass() : TclClass("Mac/AdvancedEnergyEfficientMAC") {}
+    TclObject* create(int, const char* const*) {
+        return (new AdvancedEnergyEfficientMAC);
+    }
+} class_advanced_energy
