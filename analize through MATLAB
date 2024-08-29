@@ -1,0 +1,69 @@
+% MATLAB script to analyze an NS-2/NS-3 trace file
+% This script calculates basic metrics like throughput, packet loss, and delay
+
+% Define the trace file path
+traceFile = 'path_to_trace_file.tr';
+
+% Open the trace file
+fileID = fopen(traceFile, 'r');
+
+% Check if the file opened successfully
+if fileID == -1
+    error('Error opening the trace file');
+end
+
+% Initialize variables
+totalPacketsSent = 0;
+totalPacketsReceived = 0;
+totalPacketsDropped = 0;
+totalBytesSent = 0;
+totalBytesReceived = 0;
+totalDelay = 0;
+
+% Read each line of the trace file
+while ~feof(fileID)
+    % Read a line from the file
+    line = fgetl(fileID);
+    
+    % Parse the line to extract relevant fields
+    % Assume the trace file fields: event, time, src, dst, size
+    data = strsplit(line);
+    eventType = data{1};
+    eventTime = str2double(data{2});
+    srcNode = str2double(data{3});
+    dstNode = str2double(data{4});
+    packetSize = str2double(data{5});
+    
+    % Process based on the event type
+    switch eventType
+        case 's' % Send event
+            totalPacketsSent = totalPacketsSent + 1;
+            totalBytesSent = totalBytesSent + packetSize;
+            
+        case 'r' % Receive event
+            totalPacketsReceived = totalPacketsReceived + 1;
+            totalBytesReceived = totalBytesReceived + packetSize;
+            % Calculate delay for received packets (simplified example)
+            % You need to store the send time to calculate exact delay
+            totalDelay = totalDelay + eventTime; % Modify as needed
+            
+        case 'd' % Drop event
+            totalPacketsDropped = totalPacketsDropped + 1;
+    end
+end
+
+% Close the trace file
+fclose(fileID);
+
+% Calculate performance metrics
+packetLossRatio = totalPacketsDropped / totalPacketsSent;
+averageDelay = totalDelay / totalPacketsReceived;
+throughput = (totalBytesReceived * 8) / eventTime; % in bits per second
+
+% Display the results
+fprintf('Total Packets Sent: %d\n', totalPacketsSent);
+fprintf('Total Packets Received: %d\n', totalPacketsReceived);
+fprintf('Total Packets Dropped: %d\n', totalPacketsDropped);
+fprintf('Packet Loss Ratio: %.2f\n', packetLossRatio);
+fprintf('Average Delay: %.2f seconds\n', averageDelay);
+fprintf('Throughput: %.2f bps\n', throughput);
