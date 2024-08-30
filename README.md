@@ -1,0 +1,1 @@
+he project involved developing a Medium Access Control (MAC) protocol to enhance energy efficiency in linear sensor networks. The goal was to design a protocol that minimizes energy consumption while ensuring reliable data transmission among sensors arranged in a linear topology.
